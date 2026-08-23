@@ -134,9 +134,9 @@ elif st.session_state.current_session_state_id is not None:
             summary = session["pdf_summary"].get(filename,{"title":filename,"topic":"Unkown"})
             with cols[i]:
                 with st.container(border=True):
-                    st.markdown(f"**{summary["title"]}**")
+                    st.markdown(f"**{summary['title']}**")
                     st.caption(f"Topic: {summary["topic"]}")
-                    st.caption(f"{stat["total_pages"]} pages")
+                    st.caption(f"{stat['total_pages']} pages")
     st.divider()
 
     for msg in session["messages"]:
