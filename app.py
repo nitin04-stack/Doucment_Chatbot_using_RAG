@@ -65,7 +65,7 @@ else:
     for sid ,session_data in sorted_sessions:
         col1,col2 = st.sidebar.columns([4,1])
         with col1:
-            label = f"{session_data["name"]}\n{session_data["timestamp"]}"
+            label = f"{session_data['name']}\n{session_data['timestamp']}"
             if st.button(label,key = f"select_{sid}",use_container_width=True):
                     st.session_state.current_session_state_id = sid
                     st.rerun()
