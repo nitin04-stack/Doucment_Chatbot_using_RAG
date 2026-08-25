@@ -5,6 +5,7 @@ from sentence_transformers import SentenceTransformer
 import chromadb
 import uuid
 import re
+import numpy as np
 from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder
 from langchain_groq import ChatGroq
@@ -26,7 +27,7 @@ def load_pdf(folder_path):
     print(f"total number of documents {len(all_doc)}")
     return all_doc
 
-def fixed_size_chunking(documents,chunk_size = 500,chunk_overlap = 100):
+def fixed_size_chunking(documents,chunk_size = 400,chunk_overlap = 40):
     splitter = RecursiveCharacterTextSplitter(
         chunk_size = chunk_size,
         chunk_overlap = chunk_overlap,
@@ -76,7 +77,7 @@ def add_document_collection(collection,documents,embeddings):
     print("Total document in vector store", len(document_content))
     print("document in collection ",collection.count())
 
-def sementic_retriever(query,collection,top_k=10,score_threshold = 0.4):
+def sementic_retriever(query,collection,top_k=10,score_threshold = 0.6):
     query_embeddings = genrate_embedding([query])[0]
     results = collection.query(
         query_embeddings = [query_embeddings.tolist()],
@@ -127,7 +128,7 @@ def build_rag_system(pdf_folder):
     return model, collection, bm25, chunk_doc
 
      
-def hybrid_retriever(query, collection, chunks, bm25_index, top_k=10, alpha=0.7):
+def hybrid_retriever(query, collection, chunks, bm25_index, top_k=10, alpha=0.6):
     sementic_results = sementic_retriever(query, collection, top_k=top_k)
     sementic_score = {r["documents"] : r["similarity_score"] for r in sementic_results}
     tokenize_query = re.findall(r"\w+",query.lower())
@@ -177,6 +178,7 @@ def genrate_answer(query,chunks,groq_api_key):
     context = "\n\n".join([c["document"]for c in chunks])
     prompt = f"""Answer using ONLY the context below. If the context does not
 contain enough information, say: "I don't have enough information to answer this."
+Answer the query directly and concisely based only on the provided context without adding unnecessary fluff
 
 CONTEXT:
 {context}
@@ -201,6 +203,7 @@ def generate_pdf_summary(chunks,groq_api_key,filename):
     prompt = f"""Based on this excerpt from a document, provide:
     1. A likely title (one line)
     2. The main topic/subject (one line, e.g. "Machine Learning - Neural Networks")
+    Answer the query directly and concisely based only on the provided context without adding unnecessary fluff
     excerpt: {sample_text} 
     Respond in this exact format:
     TITLE: <title>
@@ -223,5 +226,82 @@ def get_pdf_stats(docs,filename):
         page_of_file = [d for d in docs if d.metadata.get("source_file")==filename]
         return {"filename":filename,"total_pages":len(page_of_file)}
 
+def split_into_Text(text):
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    sentences = [s.strip() for s in sentences if len(s.strip())>10]
+    return sentences
+
+def check_faithfulness(answer,context_chunks,model,threshold = 0.6):
+    context_texts = [c["document"]for c in context_chunks]
+    context_embeddings = model.encode(context_texts)
+
+    answer_sentences = split_into_Text(answer)
+    if not answer_sentences:
+        return {
+            "faithfullness_percent":100,
+            "hallucination_percent":0,
+            "details":[],
+            "verdict":"No content to check"
+        }
+    grounded_count = 0
+    details = []
+    for sentence in answer_sentences:
+        sentence_embedding = model.encode([sentence])
+        best_similarity = 0
+
+        for ctx_emb in context_embeddings:
+            similarity = np.dot(sentence_embedding,ctx_emb)/(
+                 np.linalg.norm(sentence_embedding) * np.linalg.norm(ctx_emb)
+            )
+            best_similarity = max(best_similarity,similarity)
+        is_grounded = best_similarity>=threshold
+        if  is_grounded:
+            grounded_count += 1
+        details.append({
+            "sentence": sentence, 
+            "similarity": round(float(np.asarray(best_similarity).item()), 3),
+            "grounded": is_grounded
+        })
+
+    faithfulness_percent = round((grounded_count / len(answer_sentences)) * 100, 1)
+    hallucination_percent = round(100 - faithfulness_percent, 1)
+
+    if faithfulness_percent >= 80:
+        verdict = "Low hallucination risk"
+    elif faithfulness_percent >= 50:
+        verdict = "Moderate hallucination risk"
+    else:
+        verdict = "High hallucination risk"
+    return {
+        "faithfulness_percent": faithfulness_percent,
+        "hallucination_percent": hallucination_percent,
+        "details": details,
+        "verdict": verdict
+    }
+
+def check_answer_relevancy(query, answer, model):
+    query_embedding = model.encode([query])[0]
+    answer_embedding = model.encode([answer])[0]
+    similarity = np.dot(query_embedding, answer_embedding) / (
+        np.linalg.norm(query_embedding) * np.linalg.norm(answer_embedding)
+    )
+    return {"relevancy_percent": round(float(similarity) * 100, 1)}
+
+
+def check_context_precision(query, context_chunks, model, threshold=0.65):
+    if not context_chunks:
+        return {"precision_percent": 0}
+    
+    query_embedding = model.encode([query])[0]
+    relevant_count = 0
+    for chunk in context_chunks:
+        chunk_embedding = model.encode([chunk["document"]])[0]
+        similarity = np.dot(query_embedding, chunk_embedding) / (
+            np.linalg.norm(query_embedding) * np.linalg.norm(chunk_embedding)
+        )
+        if similarity >= threshold:
+            relevant_count += 1
+    
+    return {"precision_percent": round((relevant_count / len(context_chunks)) * 100, 1)}
 
 

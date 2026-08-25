@@ -7,6 +7,11 @@ from rag_backend import (
     genrate_answer,
     generate_pdf_summary,
     get_pdf_stats,
+    check_faithfulness,
+    check_answer_relevancy,
+    check_context_precision
+
+
 )
 from sentence_transformers import CrossEncoder
 import tempfile
@@ -20,9 +25,14 @@ groq_api_key = os.getenv("GROQ_API_KEY") or os.getenv("groq_api_key")
 try:
     groq_api_key = groq_api_key or st.secrets.get("groq_api_key", "")
 except Exception:
-    pass
+    load_dotenv()
+    groq_api_key = os.getenv("GROQ_API_KEY") or os.getenv("groq_api_key")
 
-st.set_page_config(page_title = "RAG Chatbot",page_icon="📚",layout = "wide")
+st.set_page_config(page_title = "RAG Doucment Chatbot",page_icon="📚",layout = "wide")
+
+if not groq_api_key:
+    st.error("API is not configure.come after sometime")
+    st.stop()
 st.title(" Dcoument Q&A Assistent")
 
 if "all_sessions" not in st.session_state:
@@ -45,10 +55,6 @@ uploaded_files = st.sidebar.file_uploader(
 )
 if not uploaded_files:
     st.info("Please upload atleast one file to get started")
-    st.stop()
-
-if not groq_api_key:
-    st.warning("please enter your groq api key")
     st.stop()
 
 st.sidebar.divider()
@@ -126,9 +132,6 @@ elif st.session_state.current_session_state_id is not None:
 
         st.subheader("📄 Uploaded Documents")
         cols = st.columns(len(session["pdf_stats"]))
-        # st.subheader(session["pdf_summary"]["title"])
-        # st.caption(f"Topic: {session['pdf_summary']['topic']}")
-        # cols = st.columns(len(session["pdf_stats"]))
         for i, stat in enumerate(session["pdf_stats"]):
             filename = stat["filename"]
             summary = session["pdf_summary"].get(filename,{"title":filename,"topic":"Unkown"})
@@ -157,30 +160,36 @@ elif st.session_state.current_session_state_id is not None:
                 answer = genrate_answer(user_query,final_results,groq_api_key)
                 st.write(answer)
 
+                faithfulness_data = check_faithfulness(answer, final_results, session["model"])
+                relevancy_data = check_answer_relevancy(user_query, answer, session["model"])
+                precision_data = check_context_precision(user_query, final_results, session["model"])
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Faithfulness", f"{faithfulness_data['faithfulness_percent']}%")
+                with col2:
+                    st.metric("Answer Relevancy", f"{relevancy_data['relevancy_percent']}%")
+                with col3:
+                    st.metric("Context Precision", f"{precision_data['precision_percent']}%")
+                st.caption(faithfulness_data['verdict'])
+
+                with st.expander("metrices"):
+                    for d in faithfulness_data['details']:
+                        icon = "✅" if d['grounded'] else "⚠️"
+                        st.write(f"{icon} ({d['similarity']}) {d['sentence']}")
+                
                 with st.expander("Sources"):
                     score = [r["rerank_score"] for r in final_results]
                     if final_results:
                         score = [r["rerank_score"] for r in final_results]
                         st.caption(f"Top score: {max(score):.4f}")
-        session["messages"].append({"role": "assistant", "content": answer})
+        session["messages"].append({"role": "assistant", "content": answer,"faithfulness": faithfulness_data, "relevancy": relevancy_data, "precision": precision_data})
         st.caption("AI can make mistakes. Please double-check answers",text_alignment="center")
     else:
         st.info("👈 upload PDF to start new chat..")
 
 st.sidebar.caption("Connect with me..")
 st.sidebar.caption("LinkedIn: [www.linkedin.com/in/nitin-ku04]")
-
-st.markdown(
-    """
-    <script>
-        var chatContainer = window.parent.document.querySelector('section.main');
-        if (chatContainer) {
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
-    </script>
-    """,
-    unsafe_allow_html=True
-)
 
 st.markdown(
     """
