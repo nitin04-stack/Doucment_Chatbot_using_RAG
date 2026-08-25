@@ -145,6 +145,14 @@ elif st.session_state.current_session_state_id is not None:
     for msg in session["messages"]:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
+            if msg["role"] == "assistant" and "faithfulness" in msg:
+                fd = msg["faithfulness"]
+                if fd.get("is_refusal"):
+                    st.caption(f"✓ {fd['verdict']}")
+                else:
+                    rd = msg["relevancy"]
+                    pd = msg["precision"]
+                    st.caption(f"Faithfulness: {fd['faithfulness_percent']}% | Relevancy: {rd['relevancy_percent']}% | Precision: {pd['precision_percent']}%")
 
     if user_query := st.chat_input("Ask question about the document..."):
         session["messages"].append({"role":"user","content":user_query})
@@ -161,23 +169,28 @@ elif st.session_state.current_session_state_id is not None:
                 st.write(answer)
 
                 faithfulness_data = check_faithfulness(answer, final_results, session["model"])
-                relevancy_data = check_answer_relevancy(user_query, answer, session["model"])
-                precision_data = check_context_precision(user_query, final_results, session["model"])
+                if faithfulness_data.get("is_refusal"):
+                    st.info(f"✓ {faithfulness_data['verdict']}")
+                    st.caption("Metrics not applicable — the system correctly identified this question as unanswerable from the uploaded documents.")
+                    relevancy_data = None
+                    precision_data = None
+                else:
+                    relevancy_data = check_answer_relevancy(user_query, answer, session["model"])
+                    precision_data = check_context_precision(user_query, final_results, session["model"])
 
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Faithfulness", f"{faithfulness_data['faithfulness_percent']}%")
-                with col2:
-                    st.metric("Answer Relevancy", f"{relevancy_data['relevancy_percent']}%")
-                with col3:
-                    st.metric("Context Precision", f"{precision_data['precision_percent']}%")
-                st.caption(faithfulness_data['verdict'])
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Faithfulness", f"{faithfulness_data['faithfulness_percent']}%")
+                    with col2:
+                        st.metric("Answer Relevancy", f"{relevancy_data['relevancy_percent']}%")
+                    with col3:
+                        st.metric("Context Precision", f"{precision_data['precision_percent']}%")
+                    st.caption(faithfulness_data['verdict'])
 
-                with st.expander("metrices"):
-                    for d in faithfulness_data['details']:
-                        icon = "✅" if d['grounded'] else "⚠️"
-                        st.write(f"{icon} ({d['similarity']}) {d['sentence']}")
-                
+                    with st.expander("metrices"):
+                        for d in faithfulness_data['details']:
+                            icon = "✅" if d['grounded'] else "⚠️"
+                            st.write(f"{icon} ({d['similarity']}) {d['sentence']}")
                 with st.expander("Sources"):
                     score = [r["rerank_score"] for r in final_results]
                     if final_results:

@@ -232,21 +232,36 @@ def split_into_Text(text):
     return sentences
 
 def check_faithfulness(answer,context_chunks,model,threshold = 0.6):
+
+    refusal_phrases = ["don't have enough information", "not available in the provided", "cannot answer", "no information", "not mentioned in the", "not covered in the"]
+    answer_lower = answer.lower()
+    is_refusal = any(phrase in answer_lower for phrase in refusal_phrases)
+    
+    if is_refusal:
+        return {
+            "faithfulness_percent": None,
+            "hallucination_percent": None,
+            "details": [],
+            "verdict": "Correctly declined - question is outside document scope",
+            "is_refusal": False
+        }
+    
     context_texts = [c["document"]for c in context_chunks]
     context_embeddings = model.encode(context_texts)
 
     answer_sentences = split_into_Text(answer)
     if not answer_sentences:
         return {
-            "faithfullness_percent":100,
+            "faithfulness_percent":100,
             "hallucination_percent":0,
             "details":[],
-            "verdict":"No content to check"
+            "verdict":"No content to check",
+            "is_refusal": False
         }
     grounded_count = 0
     details = []
     for sentence in answer_sentences:
-        sentence_embedding = model.encode([sentence])
+        sentence_embedding = model.encode([sentence])[0]
         best_similarity = 0
 
         for ctx_emb in context_embeddings:
@@ -254,6 +269,7 @@ def check_faithfulness(answer,context_chunks,model,threshold = 0.6):
                  np.linalg.norm(sentence_embedding) * np.linalg.norm(ctx_emb)
             )
             best_similarity = max(best_similarity,similarity)
+        print(f"DEBUG: '{sentence[:50]}...' -> similarity: {round(float(np.asarray(best_similarity).item()), 3)}")
         is_grounded = best_similarity>=threshold
         if  is_grounded:
             grounded_count += 1
@@ -276,7 +292,8 @@ def check_faithfulness(answer,context_chunks,model,threshold = 0.6):
         "faithfulness_percent": faithfulness_percent,
         "hallucination_percent": hallucination_percent,
         "details": details,
-        "verdict": verdict
+        "verdict": verdict,
+        "is_refusal": False
     }
 
 def check_answer_relevancy(query, answer, model):
