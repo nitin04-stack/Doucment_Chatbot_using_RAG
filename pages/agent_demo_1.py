@@ -10,16 +10,16 @@ from rag_backend import load_pdf, fixed_size_chunking, genrate_embedding, create
 from agent_backend import run_agent, set_retrieval_context
 
 try:
-    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+    groq_api_key = st.secrets["groq_api_key"]
 except Exception:
     load_dotenv()
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+    groq_api_key = os.getenv("GROQ_API_KEY")
 
 st.set_page_config(page_title="Agent Demo", page_icon="🤖")
 st.title("🤖 Agentic RAG Demo")
 st.caption("This agent decides on its own whether to search your documents or use a calculator tool, based on your question.")
 
-if not GROQ_API_KEY:
+if not groq_api_key:
     st.error("API key not configured.")
     st.stop()
 
@@ -75,10 +75,9 @@ if st.session_state.get("agent_system_ready", False):
         
         with st.chat_message("assistant"):
             with st.spinner("Agent is thinking..."):
-                answer, tools_used,retrieved_text = run_agent(user_query, GROQ_API_KEY)
+                answer, tools_used,retrieved_text = run_agent(user_query, groq_api_key)
                 st.write(answer)
                 if "search_context" in tools_used and retrieved_text:
-                    # Retrieved text ko fake "context_chunks" format mein convert karo, function reuse karne ke liye
                     fake_chunks = [{"document": t} for t in retrieved_text]
                     faithfulness_data = check_faithfulness(answer, fake_chunks, model)
                     

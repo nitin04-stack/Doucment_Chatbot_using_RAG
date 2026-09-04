@@ -93,7 +93,6 @@ def build_agent_graph(groq_api_key):
 
 def run_agent(query,groq_api_key):
     agent_executor =  build_agent_graph(groq_api_key)
-    # result = agent_executor.invoke({"messages": [{"role": "user", "content": query}]})
     system_msg = {
             "role": "system", 
             "content": "You are a helpful assistant with access to tools. When using search_documents, base your answer strictly on the retrieved content and keep it concise. Do not add extensive outside knowledge "
