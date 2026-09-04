@@ -41,6 +41,10 @@ def genrate_embedding(text,model = em_model):
 
 def create_vector_store():
     client = chromadb.PersistentClient(path = "./vector_store/chroma_db")
+    try:
+        client.delete_collection("streamlit_rag")
+    except:
+        pass
     collection = client.get_or_create_collection("streamlit_rag")
     return collection
 

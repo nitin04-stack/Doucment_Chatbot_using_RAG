@@ -92,6 +92,10 @@ if uploaded_files and st.session_state.current_session_state_id is None:
         docs = load_pdf(temp_dir)
         chunks = fixed_size_chunking(docs)
 
+        if not chunks or not any(chunk.page_content.strip() for chunk in chunks):
+            st.error("readable text not found.")
+            st.stop()
+
         from sentence_transformers import SentenceTransformer
         from rag_backend import genrate_embedding,create_vector_store,add_document_collection
         from rank_bm25 import BM25Okapi
