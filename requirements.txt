@@ -7,3 +7,5 @@ chromadb
 numpy<2
 pypdf
 python-dotenv
+langgraph
+torchvision
